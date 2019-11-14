@@ -16,7 +16,10 @@ func Scrape(service *gmail.Service) {
 
 	messages := getMessages(service, email)
 
-	println("Messages: ", messages)
+	for _, msg := range messages {
+		msgContent, _ := getMessageContent(msg.Id, service)
+		println("msgContent.Id", msgContent.Id)
+	}
 
 }
 
@@ -41,4 +44,9 @@ func getMessages(service *gmail.Service, email *string) []*gmail.Message {
 	}
 
 	return msgs
+}
+
+func getMessageContent(messageID string, service *gmail.Service) (*gmail.Message, error) {
+	msg, err := service.Users.Messages.Get("me", messageID).Do()
+	return msg, err
 }
