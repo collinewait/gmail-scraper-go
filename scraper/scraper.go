@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"google.golang.org/api/gmail/v1"
@@ -28,7 +29,7 @@ func Scrape(service *gmail.Service) {
 	go saveAttachment(attachmentChannel, doneChannel)
 
 	<-doneChannel
-	fmt.Println("Elapsed: ", time.Since(start))
+	fmt.Println("Elapsed time: ", time.Since(start))
 }
 
 type attachment struct {
@@ -56,62 +57,115 @@ func getMessages(service *gmail.Service, email *string, msgsCh chan *gmail.Messa
 		fmt.Println("No messages found.")
 	}
 
+	mux := sync.Mutex{}
+	numMessages := 0
+
 	for _, msg := range msgs {
-		msgsCh <- msg
+		mux.Lock()
+		numMessages++
+		mux.Unlock()
+		go func(msg *gmail.Message) {
+			msgsCh <- msg
+			mux.Lock()
+			numMessages--
+			mux.Unlock()
+		}(msg)
+	}
+	for numMessages > 0 {
+		time.Sleep(1 * time.Millisecond)
 	}
 	close(msgsCh)
 }
 
 func getMessageContent(msgsCh, msgCh chan *gmail.Message, service *gmail.Service) {
+	mux := sync.Mutex{}
+	numMessages := 0
 	for msg := range msgsCh {
-		msgContent, err := service.Users.Messages.Get("me", msg.Id).Do()
-		if err != nil {
-			log.Fatalf("Unable to retrieve Message Contents: %v", err)
-		}
-		msgCh <- msgContent
+		mux.Lock()
+		numMessages++
+		mux.Unlock()
+		go func(msg *gmail.Message) {
+			msgContent, err := service.Users.Messages.Get("me", msg.Id).Do()
+			if err != nil {
+				log.Fatalf("Unable to retrieve Message Contents: %v", err)
+			}
+			msgCh <- msgContent
+			mux.Lock()
+			numMessages--
+			mux.Unlock()
+		}(msg)
+	}
+	for numMessages > 0 {
+		time.Sleep(1 * time.Millisecond)
 	}
 	close(msgCh)
 }
 
 func getAttachment(service *gmail.Service, msgContentCh chan *gmail.Message, attachCh chan *attachment) {
+	mux := sync.Mutex{}
+	numMessages := 0
 	for msgContent := range msgContentCh {
-		attach := new(attachment)
-		tm := time.Unix(0, msgContent.InternalDate*1e6)
-		for _, part := range msgContent.Payload.Parts {
-			if len(part.Filename) != 0 {
-				newFileName := tm.Format("Jan-02-2006") + "-" + part.Filename
-				msgPartBody, err := service.Users.Messages.Attachments.Get("me", msgContent.Id, part.Body.AttachmentId).Do()
-				if err != nil {
-					log.Fatalf("Unable to retrieve Attachment: %v", err)
+		mux.Lock()
+		numMessages++
+		mux.Unlock()
+		go func(msgContent *gmail.Message) {
+			attach := new(attachment)
+			tm := time.Unix(0, msgContent.InternalDate*1e6)
+			for _, part := range msgContent.Payload.Parts {
+				if len(part.Filename) != 0 {
+					newFileName := tm.Format("Jan-02-2006") + "-" + part.Filename
+					msgPartBody, err := service.Users.Messages.Attachments.Get("me", msgContent.Id, part.Body.AttachmentId).Do()
+					if err != nil {
+						log.Fatalf("Unable to retrieve Attachment: %v", err)
+					}
+					attach.data = msgPartBody.Data
+					attach.fileName = newFileName
+					attachCh <- attach
+					mux.Lock()
+					numMessages--
+					mux.Unlock()
 				}
-				attach.data = msgPartBody.Data
-				attach.fileName = newFileName
-				attachCh <- attach
 			}
-		}
+		}(msgContent)
+	}
+	for numMessages > 0 {
+		time.Sleep(1 * time.Millisecond)
 	}
 	close(attachCh)
 }
 
 func saveAttachment(attachCh chan *attachment, doneCh chan bool) {
+	mux := sync.Mutex{}
+	numMessages := 0
 	for attach := range attachCh {
-		decoded, _ := base64.URLEncoding.DecodeString(attach.data)
-		const path = "./attachments/"
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			os.Mkdir(path, os.ModePerm)
-		}
-		f, err := os.Create(path + attach.fileName)
-		if err != nil {
-			panic(err)
-		}
-		defer f.Close()
+		mux.Lock()
+		numMessages++
+		mux.Unlock()
+		go func(attach *attachment) {
+			decoded, _ := base64.URLEncoding.DecodeString(attach.data)
+			const path = "./attachments/"
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				os.Mkdir(path, os.ModePerm)
+			}
+			f, err := os.Create(path + attach.fileName)
+			if err != nil {
+				panic(err)
+			}
+			defer f.Close()
 
-		if _, err := f.Write(decoded); err != nil {
-			panic(err)
-		}
-		if err := f.Sync(); err != nil {
-			panic(err)
-		}
+			if _, err := f.Write(decoded); err != nil {
+				panic(err)
+			}
+			if err := f.Sync(); err != nil {
+				panic(err)
+			}
+			mux.Lock()
+			numMessages--
+			mux.Unlock()
+		}(attach)
+	}
+	for numMessages > 0 {
+		time.Sleep(1 * time.Millisecond)
 	}
 	doneCh <- true
 }
