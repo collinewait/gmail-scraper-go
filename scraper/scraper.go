@@ -1,9 +1,12 @@
 package scraper
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"time"
 
 	"google.golang.org/api/gmail/v1"
 )
@@ -18,13 +21,30 @@ func Scrape(service *gmail.Service) {
 
 	for _, msg := range messages {
 		msgContent, _ := getMessageContent(msg.Id, service)
-
+		tm := time.Unix(0, msgContent.InternalDate*1e6)
 		for _, part := range msgContent.Payload.Parts {
 
 			if len(part.Filename) != 0 {
+				newFileName := tm.Format("Jan-02-2006") + "-" + part.Filename
 				attachment, _ := getAttachment(service, msgContent.Id, part.Body.AttachmentId)
 
-				println("attachment.Data: ", attachment.Data)
+				decoded, _ := base64.URLEncoding.DecodeString(attachment.Data)
+				const path = "./attachments/"
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					os.Mkdir(path, os.ModePerm)
+				}
+				f, err := os.Create(path + newFileName)
+				if err != nil {
+					panic(err)
+				}
+				defer f.Close()
+
+				if _, err := f.Write(decoded); err != nil {
+					panic(err)
+				}
+				if err := f.Sync(); err != nil {
+					panic(err)
+				}
 
 			}
 
