@@ -17,7 +17,6 @@ func Scrape(service *gmail.Service) {
 	var email = flag.String("email", "", "we are to query mesages against this email")
 
 	flag.Parse()
-	start := time.Now()
 	messagesChannel := make(chan *gmail.Message)
 	messageContentChannel := make(chan *gmail.Message)
 	attachmentChannel := make(chan *attachment)
@@ -29,7 +28,6 @@ func Scrape(service *gmail.Service) {
 	go saveAttachment(attachmentChannel, doneChannel)
 
 	<-doneChannel
-	fmt.Println("Elapsed time: ", time.Since(start))
 }
 
 type attachment struct {
