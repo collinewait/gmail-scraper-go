@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/collinewait/gmail-scraper-go/credentials"
+	"github.com/collinewait/gmail-scraper-go/scraper"
 	"google.golang.org/api/gmail/v1"
 )
 
@@ -15,5 +16,6 @@ func main() {
 	var gmailService GmailService
 	gmailService = &credentials.Credentials{}
 	service := gmailService.GetService()
-	println("Service", service)
+
+	scraper.Scrape(service)
 }
