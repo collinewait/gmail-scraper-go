@@ -14,9 +14,12 @@ import (
 	"google.golang.org/api/gmail/v1"
 )
 
+// Credentials contain GetService method that returns a gmail service.
+type Credentials struct{}
+
 // GetService will retrieve client credentials and return a gmail service.
 // If any error is encountered, it will panic.
-func GetService() *gmail.Service {
+func (creds *Credentials) GetService() *gmail.Service {
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
