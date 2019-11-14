@@ -18,7 +18,17 @@ func Scrape(service *gmail.Service) {
 
 	for _, msg := range messages {
 		msgContent, _ := getMessageContent(msg.Id, service)
-		println("msgContent.Id", msgContent.Id)
+
+		for _, part := range msgContent.Payload.Parts {
+
+			if len(part.Filename) != 0 {
+				attachment, _ := getAttachment(service, msgContent.Id, part.Body.AttachmentId)
+
+				println("attachment.Data: ", attachment.Data)
+
+			}
+
+		}
 	}
 
 }
@@ -49,4 +59,8 @@ func getMessages(service *gmail.Service, email *string) []*gmail.Message {
 func getMessageContent(messageID string, service *gmail.Service) (*gmail.Message, error) {
 	msg, err := service.Users.Messages.Get("me", messageID).Do()
 	return msg, err
+}
+
+func getAttachment(service *gmail.Service, messageID string, attachmentID string) (*gmail.MessagePartBody, error) {
+	return service.Users.Messages.Attachments.Get("me", messageID, attachmentID).Do()
 }
