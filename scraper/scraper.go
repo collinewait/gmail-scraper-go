@@ -57,58 +57,41 @@ func getMessages(service *gmail.Service, email *string, msgsCh chan *gmail.Messa
 		fmt.Println("No messages found.")
 	}
 
-	mux := sync.Mutex{}
-	numMessages := 0
-
+	var wg sync.WaitGroup
 	for _, msg := range msgs {
-		mux.Lock()
-		numMessages++
-		mux.Unlock()
+		wg.Add(1)
 		go func(msg *gmail.Message) {
+			defer wg.Done()
 			msgsCh <- msg
-			mux.Lock()
-			numMessages--
-			mux.Unlock()
 		}(msg)
 	}
-	for numMessages > 0 {
-		time.Sleep(1 * time.Millisecond)
-	}
+	wg.Wait()
 	close(msgsCh)
 }
 
 func getMessageContent(msgsCh, msgCh chan *gmail.Message, service *gmail.Service) {
-	mux := sync.Mutex{}
-	numMessages := 0
+	var wg sync.WaitGroup
 	for msg := range msgsCh {
-		mux.Lock()
-		numMessages++
-		mux.Unlock()
+		wg.Add(1)
 		go func(msg *gmail.Message) {
+			defer wg.Done()
 			msgContent, err := service.Users.Messages.Get("me", msg.Id).Do()
 			if err != nil {
 				log.Fatalf("Unable to retrieve Message Contents: %v", err)
 			}
 			msgCh <- msgContent
-			mux.Lock()
-			numMessages--
-			mux.Unlock()
 		}(msg)
 	}
-	for numMessages > 0 {
-		time.Sleep(1 * time.Millisecond)
-	}
+	wg.Wait()
 	close(msgCh)
 }
 
 func getAttachment(service *gmail.Service, msgContentCh chan *gmail.Message, attachCh chan *attachment) {
-	mux := sync.Mutex{}
-	numMessages := 0
+	var wg sync.WaitGroup
 	for msgContent := range msgContentCh {
-		mux.Lock()
-		numMessages++
-		mux.Unlock()
+		wg.Add(1)
 		go func(msgContent *gmail.Message) {
+			defer wg.Done()
 			attach := new(attachment)
 			tm := time.Unix(0, msgContent.InternalDate*1e6)
 			for _, part := range msgContent.Payload.Parts {
@@ -121,27 +104,20 @@ func getAttachment(service *gmail.Service, msgContentCh chan *gmail.Message, att
 					attach.data = msgPartBody.Data
 					attach.fileName = newFileName
 					attachCh <- attach
-					mux.Lock()
-					numMessages--
-					mux.Unlock()
 				}
 			}
 		}(msgContent)
 	}
-	for numMessages > 0 {
-		time.Sleep(1 * time.Millisecond)
-	}
+	wg.Wait()
 	close(attachCh)
 }
 
 func saveAttachment(attachCh chan *attachment, doneCh chan bool) {
-	mux := sync.Mutex{}
-	numMessages := 0
+	var wg sync.WaitGroup
 	for attach := range attachCh {
-		mux.Lock()
-		numMessages++
-		mux.Unlock()
+		wg.Add(1)
 		go func(attach *attachment) {
+			defer wg.Done()
 			decoded, _ := base64.URLEncoding.DecodeString(attach.data)
 			const path = "./attachments/"
 			if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -159,13 +135,8 @@ func saveAttachment(attachCh chan *attachment, doneCh chan bool) {
 			if err := f.Sync(); err != nil {
 				panic(err)
 			}
-			mux.Lock()
-			numMessages--
-			mux.Unlock()
 		}(attach)
 	}
-	for numMessages > 0 {
-		time.Sleep(1 * time.Millisecond)
-	}
+	wg.Wait()
 	doneCh <- true
 }
