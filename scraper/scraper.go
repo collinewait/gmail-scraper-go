@@ -12,6 +12,8 @@ import (
 	"google.golang.org/api/gmail/v1"
 )
 
+const userID = "me"
+
 // Scrape will extract attachments contained in mails sent by a specific email.
 func Scrape(service *gmail.Service) {
 	var email = flag.String("email", "", "we are to query mesages against this email")
@@ -40,11 +42,11 @@ func getMessages(service *gmail.Service, email *string, msgsCh chan *gmail.Messa
 
 	msgs := []*gmail.Message{}
 
-	r, err := service.Users.Messages.List("me").Q(query).Do()
+	r, err := service.Users.Messages.List(userID).Q(query).Do()
 	msgs = append(msgs, r.Messages...)
 
 	for len(r.NextPageToken) != 0 {
-		r, err = service.Users.Messages.List("me").Q(query).PageToken(r.NextPageToken).Do()
+		r, err = service.Users.Messages.List(userID).Q(query).PageToken(r.NextPageToken).Do()
 		msgs = append(msgs, r.Messages...)
 	}
 
@@ -73,7 +75,7 @@ func getMessageContent(msgsCh, msgCh chan *gmail.Message, service *gmail.Service
 		wg.Add(1)
 		go func(msg *gmail.Message) {
 			defer wg.Done()
-			msgContent, err := service.Users.Messages.Get("me", msg.Id).Do()
+			msgContent, err := service.Users.Messages.Get(userID, msg.Id).Do()
 			if err != nil {
 				log.Fatalf("Unable to retrieve Message Contents: %v", err)
 			}
@@ -95,7 +97,7 @@ func getAttachment(service *gmail.Service, msgContentCh chan *gmail.Message, att
 			for _, part := range msgContent.Payload.Parts {
 				if len(part.Filename) != 0 {
 					newFileName := tm.Format("Jan-02-2006") + "-" + part.Filename
-					msgPartBody, err := service.Users.Messages.Attachments.Get("me", msgContent.Id, part.Body.AttachmentId).Do()
+					msgPartBody, err := service.Users.Messages.Attachments.Get(userID, msgContent.Id, part.Body.AttachmentId).Do()
 					if err != nil {
 						log.Fatalf("Unable to retrieve Attachment: %v", err)
 					}
