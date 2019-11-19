@@ -17,13 +17,14 @@ const userID = "me"
 // Scrape will extract attachments contained in mails sent by a specific email.
 func Scrape(service *gmail.Service) {
 	start := time.Now()
-	var email = flag.String("email", "", "we are to query mesages against this email")
+	var email = flag.String("email", "",
+		"we are to query mesages against this email")
 
 	flag.Parse()
 
 	var ms messageSevice
 	ms = &message{}
-	messagesChannel := ms.getIDs(service, email)
+	messagesChannel := getIDs(service, email, ms)
 	messageContentChannel := make(chan *gmail.Message)
 	attachmentChannel := make(chan *attachment)
 	doneChannel := make(chan bool)
@@ -37,7 +38,11 @@ func Scrape(service *gmail.Service) {
 }
 
 type messageSevice interface {
-	getIDs(service *gmail.Service, email *string) <-chan string
+	fetchMessages(service *gmail.Service,
+		query string) (*gmail.ListMessagesResponse, error)
+	fetchNextPage(service *gmail.Service,
+		query string,
+		NextPageToken string) (*gmail.ListMessagesResponse, error)
 }
 
 type attachment struct {
@@ -48,22 +53,27 @@ type attachment struct {
 type message struct {
 }
 
-func (m *message) getIDs(service *gmail.Service, email *string) <-chan string {
+func getIDs(service *gmail.Service,
+	email *string,
+	m messageSevice) <-chan string {
 	query := fmt.Sprintf("from:%s", *email)
 
 	msgs := []*gmail.Message{}
 
 	r, err := m.fetchMessages(service, query)
+	if err != nil {
+		log.Fatalf("Unable to retrieve Messages: %v", err)
+	}
 	msgs = append(msgs, r.Messages...)
 
 	for len(r.NextPageToken) != 0 {
 		r, err = m.fetchNextPage(service, query, r.NextPageToken)
+		if err != nil {
+			log.Fatalf("Unable to retrieve Messages on the next page: %v", err)
+		}
 		msgs = append(msgs, r.Messages...)
 	}
 
-	if err != nil {
-		log.Fatalf("Unable to retrieve Messages: %v", err)
-	}
 	if len(r.Messages) == 0 {
 		fmt.Println("No messages found.")
 	}
@@ -87,17 +97,26 @@ func (m *message) getIDs(service *gmail.Service, email *string) <-chan string {
 	return ids
 }
 
-func (m *message) fetchMessages(service *gmail.Service, query string) (*gmail.ListMessagesResponse, error) {
+func (m *message) fetchMessages(
+	service *gmail.Service,
+	query string) (*gmail.ListMessagesResponse, error) {
 	r, err := service.Users.Messages.List(userID).Q(query).Do()
 	return r, err
 }
 
-func (m *message) fetchNextPage(service *gmail.Service, query string, NextPageToken string) (*gmail.ListMessagesResponse, error) {
-	r, err := service.Users.Messages.List(userID).Q(query).PageToken(NextPageToken).Do()
+func (m *message) fetchNextPage(
+	service *gmail.Service,
+	query string,
+	NextPageToken string) (*gmail.ListMessagesResponse, error) {
+	r, err := service.Users.Messages.List(userID).Q(query).
+		PageToken(NextPageToken).Do()
 	return r, err
 }
 
-func getMessageContent(ids <-chan string, msgCh chan *gmail.Message, service *gmail.Service) {
+func getMessageContent(
+	ids <-chan string,
+	msgCh chan *gmail.Message,
+	service *gmail.Service) {
 	var wg sync.WaitGroup
 	for id := range ids {
 		wg.Add(1)
@@ -114,7 +133,10 @@ func getMessageContent(ids <-chan string, msgCh chan *gmail.Message, service *gm
 	close(msgCh)
 }
 
-func getAttachment(service *gmail.Service, msgContentCh chan *gmail.Message, attachCh chan *attachment) {
+func getAttachment(
+	service *gmail.Service,
+	msgContentCh chan *gmail.Message,
+	attachCh chan *attachment) {
 	var wg sync.WaitGroup
 	for msgContent := range msgContentCh {
 		wg.Add(1)
@@ -125,7 +147,8 @@ func getAttachment(service *gmail.Service, msgContentCh chan *gmail.Message, att
 			for _, part := range msgContent.Payload.Parts {
 				if len(part.Filename) != 0 {
 					newFileName := tm.Format("Jan-02-2006") + "-" + part.Filename
-					msgPartBody, err := service.Users.Messages.Attachments.Get(userID, msgContent.Id, part.Body.AttachmentId).Do()
+					msgPartBody, err := service.Users.Messages.Attachments.
+						Get(userID, msgContent.Id, part.Body.AttachmentId).Do()
 					if err != nil {
 						log.Fatalf("Unable to retrieve Attachment: %v", err)
 					}
