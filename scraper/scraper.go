@@ -16,20 +16,28 @@ const userID = "me"
 
 // Scrape will extract attachments contained in mails sent by a specific email.
 func Scrape(service *gmail.Service) {
+	start := time.Now()
 	var email = flag.String("email", "", "we are to query mesages against this email")
 
 	flag.Parse()
-	messagesChannel := make(chan *gmail.Message)
+
+	var ms messageSevice
+	ms = &message{}
+	messagesChannel := ms.getMessages(service, email)
 	messageContentChannel := make(chan *gmail.Message)
 	attachmentChannel := make(chan *attachment)
 	doneChannel := make(chan bool)
 
-	go getMessages(service, email, messagesChannel)
 	go getMessageContent(messagesChannel, messageContentChannel, service)
 	go getAttachment(service, messageContentChannel, attachmentChannel)
 	go saveAttachment(attachmentChannel, doneChannel)
 
 	<-doneChannel
+	fmt.Println(time.Since(start))
+}
+
+type messageSevice interface {
+	getMessages(service *gmail.Service, email *string) <-chan *gmail.Message
 }
 
 type attachment struct {
@@ -37,16 +45,19 @@ type attachment struct {
 	fileName string
 }
 
-func getMessages(service *gmail.Service, email *string, msgsCh chan *gmail.Message) {
+type message struct {
+}
+
+func (m *message) getMessages(service *gmail.Service, email *string) <-chan *gmail.Message {
 	query := fmt.Sprintf("from:%s", *email)
 
 	msgs := []*gmail.Message{}
 
-	r, err := service.Users.Messages.List(userID).Q(query).Do()
+	r, err := m.fetchMessages(service, query)
 	msgs = append(msgs, r.Messages...)
 
 	for len(r.NextPageToken) != 0 {
-		r, err = service.Users.Messages.List(userID).Q(query).PageToken(r.NextPageToken).Do()
+		r, err = m.fetchNextPage(service, query, r.NextPageToken)
 		msgs = append(msgs, r.Messages...)
 	}
 
@@ -57,6 +68,8 @@ func getMessages(service *gmail.Service, email *string, msgsCh chan *gmail.Messa
 		fmt.Println("No messages found.")
 	}
 
+	msgsCh := make(chan *gmail.Message)
+
 	var wg sync.WaitGroup
 	for _, msg := range msgs {
 		wg.Add(1)
@@ -65,13 +78,28 @@ func getMessages(service *gmail.Service, email *string, msgsCh chan *gmail.Messa
 			msgsCh <- msg
 		}(msg)
 	}
-	wg.Wait()
-	close(msgsCh)
+
+	go func() {
+		wg.Wait()
+		close(msgsCh)
+	}()
+
+	return msgsCh
 }
 
-func getMessageContent(msgsCh, msgCh chan *gmail.Message, service *gmail.Service) {
+func (m *message) fetchMessages(service *gmail.Service, query string) (*gmail.ListMessagesResponse, error) {
+	r, err := service.Users.Messages.List(userID).Q(query).Do()
+	return r, err
+}
+
+func (m *message) fetchNextPage(service *gmail.Service, query string, NextPageToken string) (*gmail.ListMessagesResponse, error) {
+	r, err := service.Users.Messages.List(userID).Q(query).PageToken(NextPageToken).Do()
+	return r, err
+}
+
+func getMessageContent(msgs <-chan *gmail.Message, msgCh chan *gmail.Message, service *gmail.Service) {
 	var wg sync.WaitGroup
-	for msg := range msgsCh {
+	for msg := range msgs {
 		wg.Add(1)
 		go func(msg *gmail.Message) {
 			defer wg.Done()
