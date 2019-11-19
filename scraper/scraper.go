@@ -23,7 +23,7 @@ func Scrape(service *gmail.Service) {
 
 	var ms messageSevice
 	ms = &message{}
-	messagesChannel := ms.getMessages(service, email)
+	messagesChannel := ms.getIDs(service, email)
 	messageContentChannel := make(chan *gmail.Message)
 	attachmentChannel := make(chan *attachment)
 	doneChannel := make(chan bool)
@@ -37,7 +37,7 @@ func Scrape(service *gmail.Service) {
 }
 
 type messageSevice interface {
-	getMessages(service *gmail.Service, email *string) <-chan *gmail.Message
+	getIDs(service *gmail.Service, email *string) <-chan string
 }
 
 type attachment struct {
@@ -48,7 +48,7 @@ type attachment struct {
 type message struct {
 }
 
-func (m *message) getMessages(service *gmail.Service, email *string) <-chan *gmail.Message {
+func (m *message) getIDs(service *gmail.Service, email *string) <-chan string {
 	query := fmt.Sprintf("from:%s", *email)
 
 	msgs := []*gmail.Message{}
@@ -68,23 +68,23 @@ func (m *message) getMessages(service *gmail.Service, email *string) <-chan *gma
 		fmt.Println("No messages found.")
 	}
 
-	msgsCh := make(chan *gmail.Message)
+	ids := make(chan string)
 
 	var wg sync.WaitGroup
 	for _, msg := range msgs {
 		wg.Add(1)
 		go func(msg *gmail.Message) {
 			defer wg.Done()
-			msgsCh <- msg
+			ids <- msg.Id
 		}(msg)
 	}
 
 	go func() {
 		wg.Wait()
-		close(msgsCh)
+		close(ids)
 	}()
 
-	return msgsCh
+	return ids
 }
 
 func (m *message) fetchMessages(service *gmail.Service, query string) (*gmail.ListMessagesResponse, error) {
@@ -97,18 +97,18 @@ func (m *message) fetchNextPage(service *gmail.Service, query string, NextPageTo
 	return r, err
 }
 
-func getMessageContent(msgs <-chan *gmail.Message, msgCh chan *gmail.Message, service *gmail.Service) {
+func getMessageContent(ids <-chan string, msgCh chan *gmail.Message, service *gmail.Service) {
 	var wg sync.WaitGroup
-	for msg := range msgs {
+	for id := range ids {
 		wg.Add(1)
-		go func(msg *gmail.Message) {
+		go func(id string) {
 			defer wg.Done()
-			msgContent, err := service.Users.Messages.Get(userID, msg.Id).Do()
+			msgContent, err := service.Users.Messages.Get(userID, id).Do()
 			if err != nil {
 				log.Fatalf("Unable to retrieve Message Contents: %v", err)
 			}
 			msgCh <- msgContent
-		}(msg)
+		}(id)
 	}
 	wg.Wait()
 	close(msgCh)
