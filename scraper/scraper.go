@@ -24,7 +24,7 @@ func Scrape(service *gmail.Service) {
 
 	var ms messageSevice
 	ms = &message{}
-	messagesChannel := getIDs(service, email, ms)
+	messagesChannel, errorChannel := getIDs(service, email, ms)
 	messageContentChannel := make(chan *gmail.Message)
 	attachmentChannel := make(chan *attachment)
 	doneChannel := make(chan bool)
@@ -32,6 +32,7 @@ func Scrape(service *gmail.Service) {
 	go getMessageContent(messagesChannel, messageContentChannel, service)
 	go getAttachment(service, messageContentChannel, attachmentChannel)
 	go saveAttachment(attachmentChannel, doneChannel)
+	go exitOnError(errorChannel)
 
 	<-doneChannel
 	fmt.Println(time.Since(start))
@@ -53,23 +54,37 @@ type attachment struct {
 type message struct {
 }
 
+type messageError struct {
+	err error
+	msg string
+}
+
 func getIDs(service *gmail.Service,
 	email *string,
-	m messageSevice) <-chan string {
+	m messageSevice) (<-chan string, <-chan *messageError) {
+	errs := new(messageError)
+	errorsCh := make(chan *messageError, 1)
+	defer close(errorsCh)
 	query := fmt.Sprintf("from:%s", *email)
 
 	msgs := []*gmail.Message{}
 
 	r, err := m.fetchMessages(service, query)
 	if err != nil {
-		log.Fatalf("Unable to retrieve Messages: %v", err)
+		errs.msg = "Unable to retrieve Messages"
+		errs.err = err
+		errorsCh <- errs
+		return nil, errorsCh
 	}
 	msgs = append(msgs, r.Messages...)
 
 	for len(r.NextPageToken) != 0 {
 		r, err = m.fetchNextPage(service, query, r.NextPageToken)
 		if err != nil {
-			log.Fatalf("Unable to retrieve Messages on the next page: %v", err)
+			errs.msg = "Unable to retrieve Messages on the next page"
+			errs.err = err
+			errorsCh <- errs
+			return nil, errorsCh
 		}
 		msgs = append(msgs, r.Messages...)
 	}
@@ -94,7 +109,7 @@ func getIDs(service *gmail.Service,
 		close(ids)
 	}()
 
-	return ids
+	return ids, errorsCh
 }
 
 func (m *message) fetchMessages(
@@ -190,4 +205,10 @@ func saveAttachment(attachCh chan *attachment, doneCh chan bool) {
 	}
 	wg.Wait()
 	doneCh <- true
+}
+
+func exitOnError(errCh <-chan *messageError) {
+	for e := range errCh {
+		log.Fatalf("%s: %v", e.msg, e.err)
+	}
 }

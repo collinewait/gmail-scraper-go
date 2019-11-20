@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
@@ -62,7 +63,7 @@ func Test_getIDsCanReturnIDsWithoutNextPageToken(t *testing.T) {
 	ms = &mockMessage{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cgot := getIDs(service, &testmail, ms)
+			cgot, _ := getIDs(service, &testmail, ms)
 			var got []string
 
 			for i := range cgot {
@@ -130,7 +131,7 @@ func Test_getIDsCanReturnIDsWithNextPageToken(t *testing.T) {
 	ms = &mockMessageWithNextPage{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cgot := getIDs(service, &testmail, ms)
+			cgot, _ := getIDs(service, &testmail, ms)
 			var got []string
 
 			for i := range cgot {
@@ -145,4 +146,83 @@ func Test_getIDsCanReturnIDsWithNextPageToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockMessageWithFetchMessagesError struct {
+}
+
+func (m *mockMessageWithFetchMessagesError) fetchMessages(
+	service *gmail.Service,
+	query string) (*gmail.ListMessagesResponse, error) {
+	r := gmail.ListMessagesResponse{
+		Messages: []*gmail.Message{},
+	}
+	return &r, errors.New("Couldn't fetch messages")
+}
+
+func (m *mockMessageWithFetchMessagesError) fetchNextPage(
+	service *gmail.Service,
+	query string,
+	NextPageToken string) (*gmail.ListMessagesResponse, error) {
+
+	r := gmail.ListMessagesResponse{
+		Messages: []*gmail.Message{},
+	}
+	return &r, nil
+}
+
+func Test_getIDsShouldReturnErrorsReturnedByFetchMessages(t *testing.T) {
+	service := new(gmail.Service)
+	testmail := "test@mail.com"
+	var ms mockMessageSevice
+	ms = &mockMessageWithFetchMessagesError{}
+
+	_, err := getIDs(service, &testmail, ms)
+	expected := "Unable to retrieve Messages"
+	for e := range err {
+		if e.msg != expected {
+			t.Errorf("getIDs() = %v, want %v", e.msg, expected)
+		}
+	}
+
+}
+
+type mockMessageWithFetchNextPageError struct {
+}
+
+func (m *mockMessageWithFetchNextPageError) fetchMessages(
+	service *gmail.Service,
+	query string) (*gmail.ListMessagesResponse, error) {
+	r := gmail.ListMessagesResponse{
+		Messages:      []*gmail.Message{{Id: "16c2"}},
+		NextPageToken: "someTokenHere",
+	}
+	return &r, nil
+}
+
+func (m *mockMessageWithFetchNextPageError) fetchNextPage(
+	service *gmail.Service,
+	query string,
+	NextPageToken string) (*gmail.ListMessagesResponse, error) {
+
+	r := gmail.ListMessagesResponse{
+		Messages: []*gmail.Message{},
+	}
+	return &r, errors.New("Couldn't fetch messages on next page")
+}
+
+func Test_getIDsShouldReturnErrorsReturnedByFetchNextPage(t *testing.T) {
+	service := new(gmail.Service)
+	testmail := "test@mail.com"
+	var ms mockMessageSevice
+	ms = &mockMessageWithFetchNextPageError{}
+
+	_, err := getIDs(service, &testmail, ms)
+	expected := "Unable to retrieve Messages on the next page"
+	for e := range err {
+		if e.msg != expected {
+			t.Errorf("getIDs() = %v, want %v", e.msg, expected)
+		}
+	}
+
 }
