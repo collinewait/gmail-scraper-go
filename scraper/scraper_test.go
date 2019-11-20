@@ -226,3 +226,38 @@ func Test_getIDsShouldReturnErrorsReturnedByFetchNextPage(t *testing.T) {
 	}
 
 }
+
+type mockMessageWithoutMessages struct {
+}
+
+func (m *mockMessageWithoutMessages) fetchMessages(
+	service *gmail.Service,
+	query string) (*gmail.ListMessagesResponse, error) {
+	r := gmail.ListMessagesResponse{
+		Messages: []*gmail.Message{},
+	}
+	return &r, nil
+}
+
+func (m *mockMessageWithoutMessages) fetchNextPage(
+	service *gmail.Service,
+	query string,
+	NextPageToken string) (*gmail.ListMessagesResponse, error) {
+
+	r := gmail.ListMessagesResponse{
+		Messages: []*gmail.Message{},
+	}
+	return &r, nil
+}
+
+func Test_getIDsWithoutMessages(t *testing.T) {
+	service := new(gmail.Service)
+	testmail := "test@mail.com"
+	var ms mockMessageSevice
+	ms = &mockMessageWithoutMessages{}
+
+	msgs, _ := getIDs(service, &testmail, ms)
+	if len(msgs) != 0 {
+		t.Errorf("getIDs() = %v, want %v", len(msgs), 0)
+	}
+}
