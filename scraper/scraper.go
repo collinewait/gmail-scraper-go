@@ -26,13 +26,14 @@ func Scrape(service *gmail.Service) {
 	ms = &message{}
 	var cont content
 	cont = &messageContent{}
+	var as attachmentService
+	as = &attachment{}
 
 	messagesChannel, errorChannel := getIDs(service, email, ms)
 	messageContentChannel, errorChannel := getMessageContent(messagesChannel, service, cont)
-	attachmentChannel := make(chan *attachment)
+	attachmentChannel, errorChannel := getAttachment(messageContentChannel, service, as)
 	doneChannel := make(chan bool)
 
-	go getAttachment(service, messageContentChannel, attachmentChannel)
 	go saveAttachment(attachmentChannel, doneChannel)
 	go exitOnError(errorChannel)
 
@@ -64,6 +65,12 @@ type messageContent struct{}
 type content interface {
 	getContent(
 		service *gmail.Service, id string) (*gmail.Message, error)
+}
+
+type attachmentService interface {
+	fetchAttachment(
+		service *gmail.Service,
+		msgID string, attachID string) (*gmail.MessagePartBody, error)
 }
 
 func getIDs(service *gmail.Service,
@@ -171,10 +178,15 @@ func (mc *messageContent) getContent(
 }
 
 func getAttachment(
-	service *gmail.Service,
 	msgContentCh <-chan *gmail.Message,
-	attachCh chan *attachment) {
+	service *gmail.Service,
+	as attachmentService,
+) (<-chan *attachment, <-chan *messageError) {
 	var wg sync.WaitGroup
+	attachCh := make(chan *attachment)
+	errs := new(messageError)
+	errorsCh := make(chan *messageError, 1)
+
 	for msgContent := range msgContentCh {
 		wg.Add(1)
 		go func(msgContent *gmail.Message) {
@@ -184,10 +196,12 @@ func getAttachment(
 			for _, part := range msgContent.Payload.Parts {
 				if len(part.Filename) != 0 {
 					newFileName := tm.Format("Jan-02-2006") + "-" + part.Filename
-					msgPartBody, err := service.Users.Messages.Attachments.
-						Get(userID, msgContent.Id, part.Body.AttachmentId).Do()
+					msgPartBody, err := as.fetchAttachment(service, msgContent.Id, part.Body.AttachmentId)
 					if err != nil {
-						log.Fatalf("Unable to retrieve Attachment: %v", err)
+						errs.msg = "Unable to retrieve Attachment"
+						errs.err = err
+						errorsCh <- errs
+						close(errorsCh)
 					}
 					attach.data = msgPartBody.Data
 					attach.fileName = newFileName
@@ -196,11 +210,21 @@ func getAttachment(
 			}
 		}(msgContent)
 	}
-	wg.Wait()
-	close(attachCh)
+	go func() {
+		wg.Wait()
+		close(attachCh)
+	}()
+
+	return attachCh, errorsCh
 }
 
-func saveAttachment(attachCh chan *attachment, doneCh chan bool) {
+func (a *attachment) fetchAttachment(
+	service *gmail.Service, msgID string, attachID string) (*gmail.MessagePartBody, error) {
+	return service.Users.Messages.Attachments.
+		Get(userID, msgID, attachID).Do()
+}
+
+func saveAttachment(attachCh <-chan *attachment, doneCh chan bool) {
 	var wg sync.WaitGroup
 	for attach := range attachCh {
 		wg.Add(1)

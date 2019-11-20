@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"google.golang.org/api/gmail/v1"
 )
@@ -329,6 +330,96 @@ func Test_getMessageContentWithGetContentError(t *testing.T) {
 	_, err := getMessageContent(msgCh, service, mc)
 
 	expected := "Unable to retrieve Message Contents"
+	for e := range err {
+		if e.msg != expected {
+			t.Errorf("getMessageContent() = %v, want %v", e.msg, expected)
+		}
+	}
+}
+
+type mockAttachment struct {
+}
+
+type mockAttachmentService interface {
+	fetchAttachment(
+		service *gmail.Service,
+		msgID string, attachID string) (*gmail.MessagePartBody, error)
+}
+
+func generateMsgsContents() <-chan *gmail.Message {
+	msgsCh := make(chan *gmail.Message, 1)
+	layout := "01/02/2006 3:04:05 PM"
+	t, _ := time.Parse(layout, "11/20/2019 2:03:46 PM")
+	msgs := []*gmail.Message{
+		{
+			InternalDate: t.UnixNano(),
+			Payload: &gmail.MessagePart{
+				Parts: []*gmail.MessagePart{
+					{
+						Filename: "attachmentfile.pdf",
+						Body: &gmail.MessagePartBody{
+							AttachmentId: "attachmentId",
+						},
+					},
+				},
+			},
+			Id: "msgIdhere",
+		},
+	}
+	defer close(msgsCh)
+	for _, v := range msgs {
+		msgsCh <- v
+	}
+
+	return msgsCh
+}
+
+func (a *mockAttachment) fetchAttachment(
+	service *gmail.Service,
+	msgID string, attachID string) (*gmail.MessagePartBody, error) {
+	attachment := gmail.MessagePartBody{
+		Data: "some attachment Data Here",
+	}
+
+	return &attachment, nil
+}
+
+func Test_getAttachment(t *testing.T) {
+	service := new(gmail.Service)
+	var as mockAttachmentService
+	as = &mockAttachment{}
+	msgContents := generateMsgsContents()
+	data := "some attachment Data Here"
+
+	atts, _ := getAttachment(msgContents, service, as)
+
+	for a := range atts {
+		if a.data != data {
+			t.Errorf("getAttachment() = %v, want %v", a.data, data)
+		}
+	}
+}
+
+type mockAttachmentWithFetchError struct {
+}
+
+func (a *mockAttachmentWithFetchError) fetchAttachment(
+	service *gmail.Service,
+	msgID string, attachID string) (*gmail.MessagePartBody, error) {
+	attachment := gmail.MessagePartBody{}
+
+	return &attachment, errors.New("Error fetching attachment")
+}
+
+func Test_getAttachmentWithFetchError(t *testing.T) {
+	service := new(gmail.Service)
+	var as mockAttachmentService
+	as = &mockAttachmentWithFetchError{}
+	msgContents := generateMsgsContents()
+
+	_, err := getAttachment(msgContents, service, as)
+
+	expected := "Unable to retrieve Attachment"
 	for e := range err {
 		if e.msg != expected {
 			t.Errorf("getMessageContent() = %v, want %v", e.msg, expected)
