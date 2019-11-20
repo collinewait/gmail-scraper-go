@@ -16,17 +16,17 @@ const userID = "me"
 
 // Scrape will extract attachments contained in mails sent by a specific email.
 func Scrape(service *gmail.Service) {
-	start := time.Now()
 	var email = flag.String("email", "",
 		"we are to query mesages against this email")
 
 	flag.Parse()
 
 	var ms messageSevice
-	ms = &message{}
 	var cont content
-	cont = &messageContent{}
 	var as attachmentService
+
+	ms = &message{}
+	cont = &messageContent{}
 	as = &attachment{}
 
 	messagesChannel, errorChannel := getIDs(service, email, ms)
@@ -38,7 +38,6 @@ func Scrape(service *gmail.Service) {
 	go exitOnError(errorChannel)
 
 	<-doneChannel
-	fmt.Println(time.Since(start))
 }
 
 type messageSevice interface {
@@ -48,30 +47,26 @@ type messageSevice interface {
 		query string,
 		NextPageToken string) (*gmail.ListMessagesResponse, error)
 }
-
-type attachment struct {
-	data     string
-	fileName string
-}
-
-type message struct{}
-
-type messageError struct {
-	err error
-	msg string
-}
-
-type messageContent struct{}
 type content interface {
 	getContent(
 		service *gmail.Service, id string) (*gmail.Message, error)
 }
-
 type attachmentService interface {
 	fetchAttachment(
 		service *gmail.Service,
 		msgID string, attachID string) (*gmail.MessagePartBody, error)
 }
+
+type attachment struct {
+	data     string
+	fileName string
+}
+type message struct{}
+type messageError struct {
+	err error
+	msg string
+}
+type messageContent struct{}
 
 func getIDs(service *gmail.Service,
 	email *string,
