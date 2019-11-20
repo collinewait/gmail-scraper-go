@@ -261,3 +261,77 @@ func Test_getIDsWithoutMessages(t *testing.T) {
 		t.Errorf("getIDs() = %v, want %v", len(msgs), 0)
 	}
 }
+
+type mockMessageContent struct {
+}
+
+type mockContent interface {
+	getContent(
+		service *gmail.Service, id string) (*gmail.Message, error)
+}
+
+func generateIds() <-chan string {
+	idsCh := make(chan string, 1)
+	ids := []string{"someId"}
+	defer close(idsCh)
+	for _, v := range ids {
+		idsCh <- v
+	}
+
+	return idsCh
+}
+
+func (m *mockMessageContent) getContent(
+	service *gmail.Service, id string) (*gmail.Message, error) {
+	gm := gmail.Message{
+		Payload: &gmail.MessagePart{
+			Filename: "somename.pdf",
+		},
+	}
+	return &gm, nil
+}
+
+func Test_getMessageContent(t *testing.T) {
+	service := new(gmail.Service)
+	var mc mockContent
+	mc = &mockMessageContent{}
+	msgCh := generateIds()
+	filename := "somename.pdf"
+
+	msgs, _ := getMessageContent(msgCh, service, mc)
+
+	for m := range msgs {
+		if m.Payload.Filename != filename {
+			t.Errorf("getMessageContent() = %v, want %v", m.Payload.Filename, filename)
+		}
+	}
+}
+
+type mockMessageContentWithGetContentError struct {
+}
+
+func (m *mockMessageContentWithGetContentError) getContent(
+	service *gmail.Service, id string) (*gmail.Message, error) {
+	gm := gmail.Message{
+		Payload: &gmail.MessagePart{
+			Filename: "",
+		},
+	}
+	return &gm, errors.New("Error when getting contents")
+}
+
+func Test_getMessageContentWithGetContentError(t *testing.T) {
+	service := new(gmail.Service)
+	var mc mockContent
+	mc = &mockMessageContentWithGetContentError{}
+	msgCh := generateIds()
+
+	_, err := getMessageContent(msgCh, service, mc)
+
+	expected := "Unable to retrieve Message Contents"
+	for e := range err {
+		if e.msg != expected {
+			t.Errorf("getMessageContent() = %v, want %v", e.msg, expected)
+		}
+	}
+}

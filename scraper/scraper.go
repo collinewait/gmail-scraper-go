@@ -24,12 +24,14 @@ func Scrape(service *gmail.Service) {
 
 	var ms messageSevice
 	ms = &message{}
+	var cont content
+	cont = &messageContent{}
+
 	messagesChannel, errorChannel := getIDs(service, email, ms)
-	messageContentChannel := make(chan *gmail.Message)
+	messageContentChannel, errorChannel := getMessageContent(messagesChannel, service, cont)
 	attachmentChannel := make(chan *attachment)
 	doneChannel := make(chan bool)
 
-	go getMessageContent(messagesChannel, messageContentChannel, service)
 	go getAttachment(service, messageContentChannel, attachmentChannel)
 	go saveAttachment(attachmentChannel, doneChannel)
 	go exitOnError(errorChannel)
@@ -51,12 +53,17 @@ type attachment struct {
 	fileName string
 }
 
-type message struct {
-}
+type message struct{}
 
 type messageError struct {
 	err error
 	msg string
+}
+
+type messageContent struct{}
+type content interface {
+	getContent(
+		service *gmail.Service, id string) (*gmail.Message, error)
 }
 
 func getIDs(service *gmail.Service,
@@ -109,7 +116,7 @@ func getIDs(service *gmail.Service,
 		close(ids)
 	}()
 
-	return ids, errorsCh
+	return ids, nil
 }
 
 func (m *message) fetchMessages(
@@ -130,27 +137,42 @@ func (m *message) fetchNextPage(
 
 func getMessageContent(
 	ids <-chan string,
-	msgCh chan *gmail.Message,
-	service *gmail.Service) {
+	service *gmail.Service,
+	c content) (<-chan *gmail.Message, <-chan *messageError) {
+
+	msgCh := make(chan *gmail.Message)
+	errs := new(messageError)
+	errorsCh := make(chan *messageError, 1)
 	var wg sync.WaitGroup
 	for id := range ids {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
-			msgContent, err := service.Users.Messages.Get(userID, id).Do()
+			msgContent, err := c.getContent(service, id)
 			if err != nil {
-				log.Fatalf("Unable to retrieve Message Contents: %v", err)
+				errs.msg = "Unable to retrieve Message Contents"
+				errs.err = err
+				errorsCh <- errs
+				close(errorsCh)
 			}
 			msgCh <- msgContent
 		}(id)
 	}
-	wg.Wait()
-	close(msgCh)
+	go func() {
+		wg.Wait()
+		close(msgCh)
+	}()
+	return msgCh, errorsCh
+}
+
+func (mc *messageContent) getContent(
+	service *gmail.Service, id string) (*gmail.Message, error) {
+	return service.Users.Messages.Get(userID, id).Do()
 }
 
 func getAttachment(
 	service *gmail.Service,
-	msgContentCh chan *gmail.Message,
+	msgContentCh <-chan *gmail.Message,
 	attachCh chan *attachment) {
 	var wg sync.WaitGroup
 	for msgContent := range msgContentCh {
