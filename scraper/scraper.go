@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sync"
@@ -38,7 +39,7 @@ func Scrape(service *gmail.Service) {
 	<-doneChannel
 }
 
-func getSendingEmail(in *os.File) string {
+func getSendingEmail(in io.Reader) string {
 	scanner := bufio.NewScanner(in)
 	fmt.Print("Enter email that sent attachments: ")
 	scanner.Scan()

@@ -3,8 +3,6 @@ package scraper
 import (
 	"errors"
 	"io"
-	"io/ioutil"
-	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -430,26 +428,29 @@ func Test_getAttachmentWithFetchError(t *testing.T) {
 	}
 }
 
+type R struct {
+	Data string
+	done bool
+}
+
+func (r *R) Read(p []byte) (n int, err error) {
+	copy(p, []byte(r.Data))
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return len([]byte(r.Data)), nil
+}
+func NewR(data string) *R {
+	return &R{data, false}
+}
+
 func Test_getSendingEmail(t *testing.T) {
 	expectedEmail := "someemail"
 
-	in, err := ioutil.TempFile("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer in.Close()
+	r := NewR("someemail\n")
 
-	_, err = io.WriteString(in, "someemail\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = in.Seek(0, os.SEEK_SET)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	emailThatSend := getSendingEmail(in)
+	emailThatSend := getSendingEmail(r)
 	if emailThatSend != expectedEmail {
 		t.Errorf("getSendingEmail() = %v, want %v", emailThatSend, expectedEmail)
 	}
