@@ -2,6 +2,9 @@ package scraper
 
 import (
 	"errors"
+	"io"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -64,7 +67,7 @@ func Test_getIDsCanReturnIDsWithoutNextPageToken(t *testing.T) {
 	ms = &mockMessage{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cgot, _ := getIDs(service, &testmail, ms)
+			cgot, _ := getIDs(service, testmail, ms)
 			var got []string
 
 			for i := range cgot {
@@ -132,7 +135,7 @@ func Test_getIDsCanReturnIDsWithNextPageToken(t *testing.T) {
 	ms = &mockMessageWithNextPage{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cgot, _ := getIDs(service, &testmail, ms)
+			cgot, _ := getIDs(service, testmail, ms)
 			var got []string
 
 			for i := range cgot {
@@ -178,7 +181,7 @@ func Test_getIDsShouldReturnErrorsReturnedByFetchMessages(t *testing.T) {
 	var ms mockMessageSevice
 	ms = &mockMessageWithFetchMessagesError{}
 
-	_, err := getIDs(service, &testmail, ms)
+	_, err := getIDs(service, testmail, ms)
 	expected := "Unable to retrieve Messages"
 	for e := range err {
 		if e.msg != expected {
@@ -218,7 +221,7 @@ func Test_getIDsShouldReturnErrorsReturnedByFetchNextPage(t *testing.T) {
 	var ms mockMessageSevice
 	ms = &mockMessageWithFetchNextPageError{}
 
-	_, err := getIDs(service, &testmail, ms)
+	_, err := getIDs(service, testmail, ms)
 	expected := "Unable to retrieve Messages on the next page"
 	for e := range err {
 		if e.msg != expected {
@@ -257,7 +260,7 @@ func Test_getIDsWithoutMessages(t *testing.T) {
 	var ms mockMessageSevice
 	ms = &mockMessageWithoutMessages{}
 
-	msgs, _ := getIDs(service, &testmail, ms)
+	msgs, _ := getIDs(service, testmail, ms)
 	if len(msgs) != 0 {
 		t.Errorf("getIDs() = %v, want %v", len(msgs), 0)
 	}
@@ -424,5 +427,30 @@ func Test_getAttachmentWithFetchError(t *testing.T) {
 		if e.msg != expected {
 			t.Errorf("getMessageContent() = %v, want %v", e.msg, expected)
 		}
+	}
+}
+
+func Test_getSendingEmail(t *testing.T) {
+	expectedEmail := "someemail"
+
+	in, err := ioutil.TempFile("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+
+	_, err = io.WriteString(in, "someemail\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = in.Seek(0, os.SEEK_SET)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	emailThatSend := getSendingEmail(in)
+	if emailThatSend != expectedEmail {
+		t.Errorf("getSendingEmail() = %v, want %v", emailThatSend, expectedEmail)
 	}
 }

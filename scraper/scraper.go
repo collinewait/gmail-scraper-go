@@ -1,8 +1,8 @@
 package scraper
 
 import (
+	"bufio"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -16,10 +16,8 @@ const userID = "me"
 
 // Scrape will extract attachments contained in mails sent by a specific email.
 func Scrape(service *gmail.Service) {
-	var email = flag.String("email", "",
-		"we are to query mesages against this email")
-
-	flag.Parse()
+	osf := os.Stdin
+	emailThatSent := getSendingEmail(osf)
 
 	var ms messageSevice
 	var cont content
@@ -29,7 +27,7 @@ func Scrape(service *gmail.Service) {
 	cont = &messageContent{}
 	as = &attachment{}
 
-	messagesChannel, errorChannel := getIDs(service, email, ms)
+	messagesChannel, errorChannel := getIDs(service, emailThatSent, ms)
 	messageContentChannel, errorChannel := getMessageContent(messagesChannel, service, cont)
 	attachmentChannel, errorChannel := getAttachment(messageContentChannel, service, as)
 	doneChannel := make(chan bool)
@@ -38,6 +36,15 @@ func Scrape(service *gmail.Service) {
 	go exitOnError(errorChannel)
 
 	<-doneChannel
+}
+
+func getSendingEmail(in *os.File) string {
+	scanner := bufio.NewScanner(in)
+	fmt.Print("Enter email that sent attachments: ")
+	scanner.Scan()
+	emailThatSent := scanner.Text()
+
+	return emailThatSent
 }
 
 type messageSevice interface {
@@ -69,12 +76,12 @@ type messageError struct {
 type messageContent struct{}
 
 func getIDs(service *gmail.Service,
-	email *string,
+	email string,
 	m messageSevice) (<-chan string, <-chan *messageError) {
 	errs := new(messageError)
 	errorsCh := make(chan *messageError, 1)
 	defer close(errorsCh)
-	query := fmt.Sprintf("from:%s", *email)
+	query := fmt.Sprintf("from:%s", email)
 
 	msgs := []*gmail.Message{}
 
