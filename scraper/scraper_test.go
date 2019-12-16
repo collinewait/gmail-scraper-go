@@ -450,7 +450,7 @@ func Test_getSendingEmail(t *testing.T) {
 
 	r := NewR("someemail\n")
 
-	emailThatSend := getSendingEmail(r)
+	emailThatSend := getEmailThatSentAttachment(r)
 	if emailThatSend != expectedEmail {
 		t.Errorf("getSendingEmail() = %v, want %v", emailThatSend, expectedEmail)
 	}

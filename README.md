@@ -17,7 +17,7 @@ go get -u golang.org/x/net
 
 ## Run the app.
 
-To run the application, use the following command `go run exec.go -email={emailThatSentYouAttachments}`
+To run the application, use the following command `go run exec.go`
 
 For the first time, it will prompt you to authorize access. Authorization code is based off code provided by Google to interact with the API. The steps below are also provided ([here](https://developers.google.com/gmail/api/quickstart/go#step_4_run_the_sample)):
 

@@ -18,7 +18,7 @@ const userID = "me"
 // Scrape will extract attachments contained in mails sent by a specific email.
 func Scrape(service *gmail.Service) {
 	osf := os.Stdin
-	emailThatSent := getSendingEmail(osf)
+	emailThatSentAttach := getEmailThatSentAttachment(osf)
 
 	var ms messageSevice
 	var cont content
@@ -28,7 +28,7 @@ func Scrape(service *gmail.Service) {
 	cont = &messageContent{}
 	as = &attachment{}
 
-	messagesChannel, errorChannel := getIDs(service, emailThatSent, ms)
+	messagesChannel, errorChannel := getIDs(service, emailThatSentAttach, ms)
 	messageContentChannel, errorChannel := getMessageContent(messagesChannel, service, cont)
 	attachmentChannel, errorChannel := getAttachment(messageContentChannel, service, as)
 	doneChannel := make(chan bool)
@@ -39,7 +39,7 @@ func Scrape(service *gmail.Service) {
 	<-doneChannel
 }
 
-func getSendingEmail(in io.Reader) string {
+func getEmailThatSentAttachment(in io.Reader) string {
 	scanner := bufio.NewScanner(in)
 	fmt.Print("Enter email that sent attachments: ")
 	scanner.Scan()
