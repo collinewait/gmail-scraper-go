@@ -27,3 +27,5 @@ If you are not already logged into your Google account, you will be prompted to 
 - Copy the code you're given, paste it into the command-line prompt, and press Enter.
 
 Your attachments will be downloaded to a folder called `attachments` at the root of the project.
+
+A web version can be found here: [Frontend](https://github.com/collinewait/ika-gmail-scraper-frontend) and a [backend](https://github.com/collinewait/ika-gmail-scraper-backend)
